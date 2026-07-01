@@ -1,0 +1,19 @@
+# Dataset
+dataset/
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Environment variables
+.env
+
+# Build files
+dist/
+build/
