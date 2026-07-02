@@ -44,6 +44,34 @@ PROFILE_FIELDS = {
     "current_industry",
     "open_to_work_flag",
 }
+
+RAW_CSV_FIELDS = {
+    "candidate_id",
+    "profile",
+    "career_history",
+    "education",
+    "skills",
+    "redrob_signals",
+    "certifications",
+    "languages",
+    "headline",
+    "summary",
+    "current_title",
+    "current_company",
+}
+
+
+def is_raw_candidate_csv(path: Path) -> bool:
+    if not path.exists() or not path.is_file():
+        return False
+
+    try:
+        frame = pd.read_csv(path, nrows=1)
+    except Exception:
+        return False
+
+    headers = {column.lower().strip() for column in frame.columns}
+    return bool(headers & RAW_CSV_FIELDS)
 REDROB_FIELDS = {
     "profile_completeness_score",
     "signup_date",
@@ -742,20 +770,34 @@ async def rank(
             raise HTTPException(status_code=400, detail="Unsupported upload mode.")
 
         if file is None:
-            raise HTTPException(status_code=400, detail="The uploaded file is required in upload mode.")
+            default_csv_path = (Path(__file__).resolve().parent.parent / "sorted_candidates.jsonl").resolve()
+            default_jsonl_path = (Path(__file__).resolve().parent.parent / "candidates.jsonl").resolve()
 
-        filename = file.filename or "uploaded-dataset"
-        content = await file.read()
+            if is_raw_candidate_csv(default_csv_path):
+                candidates, filename = load_candidates_from_server_path(str(default_csv_path))
+            elif default_jsonl_path.exists() and default_jsonl_path.is_file():
+                candidates, filename = load_candidates_from_server_path(str(default_jsonl_path))
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "No dataset file was provided and the default sorted_candidates.jsonl file is not a valid raw candidate dataset. "
+                        "Please upload a raw candidate CSV or provide a JSONL dataset."
+                    ),
+                )
+        else:
+            filename = file.filename or "uploaded-dataset"
+            content = await file.read()
 
-        if not content:
-            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+            if not content:
+                raise HTTPException(status_code=400, detail="The uploaded file is empty.")
 
-        candidates = parse_uploaded_candidates(filename, content)
+            candidates = parse_uploaded_candidates(filename, content)
 
     job_payload = build_job_payload(job_description)
 
     try:
-        from ranking import rank_candidates
+        from fast_rank import rank_candidates_fast
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -763,7 +805,25 @@ async def rank(
         ) from exc
 
     try:
-        ranked_candidates = rank_candidates(candidates, job_payload)
+        repo_root = Path(__file__).resolve().parent.parent
+        ranking_dataset_path = None
+        if dataset_path:
+            candidate_path = Path(dataset_path)
+            if not candidate_path.is_absolute():
+                candidate_path = (repo_root / candidate_path).resolve()
+            ranking_dataset_path = candidate_path
+        else:
+            for candidate_name in ("sorted_candidates.jsonl", "sorted_candidtates.jsonl", "candidates.jsonl"):
+                candidate_path = repo_root / candidate_name
+                if candidate_path.exists() and candidate_path.is_file():
+                    ranking_dataset_path = candidate_path
+                    break
+
+        ranked_candidates = rank_candidates_fast(
+            candidates,
+            job_payload,
+            dataset_path=ranking_dataset_path,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,

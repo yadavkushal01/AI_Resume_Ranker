@@ -4,10 +4,13 @@ TalentMind AI Resume Ranker is an AI-powered intelligent candidate discovery pla
 
 ## Features
 
-- Job description editor with validation and live character counting
+- Recruiter-friendly job description editor with validation and live character counting
 - Drag-and-drop dataset upload for `.jsonl`, `.json`, `.csv`, and `.xlsx`
-- FastAPI ranking endpoint that accepts `FormData`
-- Frontend upload progress, processing states, and professional error toasts
+- FastAPI ranking endpoint that accepts multipart form data and supports both uploaded files and server-side dataset paths
+- Fast shortlist retrieval that prefers the sorted candidate dataset to reduce ranking time
+- Full ranking pipeline with semantic matching, skill matching, career/credibility/behavior signals, and score normalization
+- Distinct final ranking values so candidates are easier to compare even when their raw signal scores are similar
+- Frontend CSV export for ranked results with `candidate_id`, `rank`, `score`, and `reason`
 - Expandable candidate result cards with rank, score, experience, skills, reasoning, projects, education, strengths, weaknesses, and missing skills
 - Environment-based API configuration with `VITE_API_URL`
 - Responsive React + TypeScript + Tailwind UI optimized for recruiter workflows
@@ -36,8 +39,10 @@ TalentMind AI Resume Ranker is an AI-powered intelligent candidate discovery pla
 ## Project Architecture
 
 - `frontend/` contains the recruiter-facing application, API service layer, UI components, route definitions, hooks, types, utilities, and static assets.
-- `backend/` exposes the API surface and wraps the existing AI ranking pipeline without changing its ranking logic.
-- `dataset/India_runs_data_and_ai_challenge/` contains sample challenge data, schema references, and validation materials.
+- `backend/` exposes the API surface and wraps the ranking pipeline with fast candidate retrieval, scoring normalization, and ranking export support.
+- `backend/fast_retrieval.py` and `backend/fast_rank.py` power the shortlist step before running the full ranking pipeline.
+- `backend/scoring.py` now applies normalization so every candidate receives a distinct final score while preserving order.
+- `sorted_candidates.jsonl` is preferred when present, and the backend also falls back to `sorted_candidtates.jsonl` or `candidates.jsonl` when needed.
 
 ## Folder Structure
 
@@ -87,7 +92,6 @@ AI_Resume_Ranker/
 ### Backend Installation
 
 ```bash
-cd backend
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -104,9 +108,10 @@ npm install
 
 ### Running Backend
 
+From the repository root:
+
 ```bash
-cd backend
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ### Running Frontend
@@ -142,6 +147,14 @@ Example response:
 }
 ```
 
+### Browse Dataset Path
+
+```http
+POST /browse-dataset-path
+```
+
+Opens a local file picker on the server and returns the selected dataset path when available.
+
 ### Rank Candidates
 
 ```http
@@ -149,17 +162,22 @@ POST /rank
 Content-Type: multipart/form-data
 ```
 
+The backend prefers the sorted dataset file when it is available, applies a fast shortlist retrieval step, and then runs the full scoring pipeline on the shortlisted candidates.
+
 Form fields:
 
 - `job_description`: recruiter-provided job description text
-- `file`: candidate dataset upload
+- `upload_mode`: either `file` or `server`
+- `dataset_path`: absolute or relative server-side dataset path when `upload_mode=server`
+- `file`: uploaded candidate dataset when `upload_mode=file`
 
 Example request with `curl`:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/rank" \
   -F "job_description=We are hiring a Retrieval Engineer with Python, vector database, ranking, and LLM experience." \
-  -F "file=@dataset/India_runs_data_and_ai_challenge/candidates.jsonl"
+  -F "upload_mode=file" \
+  -F "file=@sorted_candidates.jsonl"
 ```
 
 Example response shape:
@@ -173,11 +191,18 @@ Example response shape:
     "preferred_skills": ["LLM", "Cloud"]
   },
   "summary": {
-    "source_file": "candidates.jsonl",
+    "source_file": "sorted_candidates.jsonl",
     "total_candidates": 50,
     "analyzed_at": "2026-07-01T12:00:00+00:00"
   },
-  "candidates": []
+  "candidates": [
+    {
+      "candidate_id": "CAND_0000001",
+      "candidate_name": "Candidate 1",
+      "match_score": 91.4,
+      "reason": "Strong retrieval and semantic alignment"
+    }
+  ]
 }
 ```
 
@@ -220,6 +245,7 @@ Each line should contain one candidate object following the challenge schema:
 - Add saved searches and role templates
 - Support richer JD parsing with configurable scoring controls
 - Add analytics for recruiter decision quality
+- Add semantic retrieval tuning and configurable shortlist size
 
 ## License
 

@@ -80,13 +80,16 @@ function parseRankResponse(payload: unknown): RankResponse {
 
 export function rankCandidates(
   jobDescription: string,
-  file: File,
+  file: File | null | undefined,
   options: RankCandidatesOptions = {},
 ): Promise<RankResponse> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("job_description", jobDescription);
-    formData.append("file", file);
+
+    if (file) {
+      formData.append("file", file);
+    }
 
     const request = new XMLHttpRequest();
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -95,21 +98,26 @@ export function rankCandidates(
     request.timeout = timeoutMs;
     request.responseType = "text";
 
-    options.onPhaseChange?.("uploading");
-    options.onUploadProgress?.(0);
+    if (file) {
+      options.onPhaseChange?.("uploading");
+      options.onUploadProgress?.(0);
 
-    request.upload.onprogress = (event) => {
-      if (!event.lengthComputable) {
-        return;
-      }
+      request.upload.onprogress = (event) => {
+        if (!event.lengthComputable) {
+          return;
+        }
 
-      options.onUploadProgress?.(Math.round((event.loaded / event.total) * 100));
-    };
+        options.onUploadProgress?.(Math.round((event.loaded / event.total) * 100));
+      };
 
-    request.upload.onload = () => {
-      options.onUploadProgress?.(100);
+      request.upload.onload = () => {
+        options.onUploadProgress?.(100);
+        options.onPhaseChange?.("processing");
+      };
+    } else {
       options.onPhaseChange?.("processing");
-    };
+      options.onUploadProgress?.(100);
+    }
 
     request.onerror = () => {
       reject(

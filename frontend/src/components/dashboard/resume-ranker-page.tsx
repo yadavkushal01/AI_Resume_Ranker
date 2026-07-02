@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Bot, RefreshCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-import { FileUploadPanel } from "@/components/dashboard/file-upload-panel";
 import { JobDescriptionPanel } from "@/components/dashboard/job-description-panel";
 import { LoadingPanel } from "@/components/dashboard/loading-panel";
 import { ResultsPanel } from "@/components/dashboard/results-panel";
@@ -10,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { useBackendStatus } from "@/hooks/use-backend-status";
 import { ApiRequestError, rankCandidates } from "@/services/api";
 import type { AnalysisPhase, RankResponse } from "@/types/ranking";
-import { validateCandidateFile } from "@/utils/file-validation";
 
 const TOP_CANDIDATES_LIMIT = 100;
 
@@ -23,34 +21,12 @@ const STATUS_STYLES = {
 export function ResumeRankerPage() {
   const [jobDescription, setJobDescription] = useState("");
   const [jobError, setJobError] = useState<string | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<AnalysisPhase>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [response, setResponse] = useState<RankResponse | null>(null);
 
   const { message: backendMessage, refresh, status } = useBackendStatus();
   const isBusy = phase !== "idle";
-
-  function handleFileSelect(file: File | null) {
-    if (!file) {
-      setSelectedFile(null);
-      setFileError(null);
-      return;
-    }
-
-    const validationMessage = validateCandidateFile(file);
-
-    if (validationMessage) {
-      setSelectedFile(null);
-      setFileError(validationMessage);
-      toast.error(validationMessage);
-      return;
-    }
-
-    setSelectedFile(file);
-    setFileError(null);
-  }
 
   function limitTopCandidates(nextResponse: RankResponse): RankResponse {
     const candidates = nextResponse.candidates.slice(0, TOP_CANDIDATES_LIMIT);
@@ -76,14 +52,6 @@ export function ResumeRankerPage() {
       setJobError(null);
     }
 
-    if (!selectedFile) {
-      setFileError("Upload a supported candidate dataset before running analysis.");
-      toast.error("Candidate dataset is required.");
-      blocked = true;
-    } else {
-      setFileError(null);
-    }
-
     if (blocked) {
       return;
     }
@@ -91,14 +59,8 @@ export function ResumeRankerPage() {
     setUploadProgress(0);
     setResponse(null);
 
-    if (!selectedFile) {
-      return;
-    }
-
-    setPhase("uploading");
-
     try {
-      const nextResponse = await rankCandidates(jobDescription.trim(), selectedFile, {
+      const nextResponse = await rankCandidates(jobDescription.trim(), null, {
         onPhaseChange: setPhase,
         onUploadProgress: setUploadProgress,
       });
@@ -169,9 +131,9 @@ export function ResumeRankerPage() {
                   Turn recruiter briefs and candidate datasets into ranked hiring intelligence.
                 </h1>
                 <p className="max-w-3xl text-base leading-7 text-muted-foreground">
-                  Paste the role description, upload a structured candidate file, and let TalentMind
-                  surface the strongest matches with AI reasoning, strengths, weaknesses, and
-                  missing skill gaps in one pass.
+                  Paste the role description and let TalentMind use the built-in candidate dataset
+                  from the backend to surface the strongest matches with AI reasoning, strengths,
+                  weaknesses, and missing skill gaps in one pass.
                 </p>
               </div>
             </div>
@@ -182,7 +144,7 @@ export function ResumeRankerPage() {
               </p>
               <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
                 <li>1. Paste the role brief and required skills.</li>
-                <li>2. Upload JSONL, JSON, CSV, or XLSX candidate data.</li>
+                <li>2. The backend uses the bundled sorted_candidates.jsonl dataset automatically.</li>
                 <li>3. Review the top 100 ranked candidates with expandable insights.</li>
               </ul>
               <button
@@ -197,7 +159,7 @@ export function ResumeRankerPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-2">
+        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <JobDescriptionPanel
             characterCount={jobDescription.length}
             error={jobError}
@@ -206,18 +168,16 @@ export function ResumeRankerPage() {
             onChange={setJobDescription}
           />
 
-          <FileUploadPanel
-            error={fileError}
-            file={selectedFile}
-            isBusy={isBusy}
-            phase={phase}
-            uploadProgress={uploadProgress}
-            onClearFile={() => {
-              setSelectedFile(null);
-              setFileError(null);
-            }}
-            onFileSelect={handleFileSelect}
-          />
+          <div className="rounded-[1.7rem] border border-border/60 bg-background/60 p-6 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Dataset Source
+            </p>
+            <h2 className="mt-3 text-lg font-semibold text-foreground">Using the bundled backend dataset</h2>
+            <p className="mt-3 text-sm leading-7 text-muted-foreground">
+              No manual upload is required. The ranking flow reads the built-in candidates.jsonl file
+              from the backend automatically, so you can start analyzing right away.
+            </p>
+          </div>
         </section>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -59,6 +59,32 @@ def normalize(value, maximum):
     return min(value / maximum, 1)
 
 
+def normalize_score_distribution(scores):
+    """Assign a distinct, reliable score to every candidate while preserving ordering."""
+    if not scores:
+        return []
+
+    if len(scores) == 1:
+        return [1.0]
+
+    order = sorted(range(len(scores)), key=lambda index: (-scores[index], index))
+    normalized = [0.0] * len(scores)
+    total = len(scores)
+
+    for position, index in enumerate(order):
+        if position == 0:
+            normalized[index] = 1.0
+        elif position == total - 1:
+            normalized[index] = 0.05
+        else:
+            rank_ratio = position / (total - 1)
+            base = 1.0 - (rank_ratio * 0.95)
+            jitter = (total - position) / (total * 1000)
+            normalized[index] = round(max(0.05, base + jitter), 6)
+
+    return normalized
+
+
 # ==========================================================
 # JD Score
 # ==========================================================

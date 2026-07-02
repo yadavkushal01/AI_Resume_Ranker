@@ -5,9 +5,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { RankResponse } from "@/types/ranking";
 import { formatAnalysisTimestamp, formatExperience } from "@/utils/format";
-import { BookOpen, BriefcaseBusiness, CircleAlert, Medal, Sparkles, Target } from "lucide-react";
+import { BookOpen, BriefcaseBusiness, CircleAlert, Download, Medal, Sparkles, Target } from "lucide-react";
 
 type ResultsPanelProps = {
   response: RankResponse | null;
@@ -56,6 +57,37 @@ function DetailList({ items, tone }: { items: string[]; tone: "success" | "warni
   );
 }
 
+function downloadCsv(response: RankResponse) {
+  const rows = response.candidates.map((candidate) => ({
+    candidate_id: candidate.candidate_id,
+    rank: candidate.rank,
+    score: candidate.match_score,
+    reasoning: candidate.reason,
+  }));
+
+  const header = Object.keys(rows[0] ?? {});
+  const csv = [
+    header.join(","),
+    ...rows.map((row) =>
+      header
+        .map((key) => {
+          const value = row[key as keyof typeof row];
+          const escaped = String(value ?? "").replace(/"/g, '""');
+          return `"${escaped}"`;
+        })
+        .join(","),
+    ),
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `ranked-candidates-${Date.now()}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ResultsPanel({ response }: ResultsPanelProps) {
   if (!response) {
     return (
@@ -96,22 +128,32 @@ export function ResultsPanel({ response }: ResultsPanelProps) {
               TalentMind Ranking Results
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Source file: {response.summary.source_file} · Analyzed{" "}
-              {formatAnalysisTimestamp(response.summary.analyzed_at)}
+              Analyzed at {formatAnalysisTimestamp(response.summary.analyzed_at)}
             </p>
           </div>
 
-          {topCandidate ? (
-            <div className="rounded-[1.4rem] border border-brand-cyan/25 bg-brand-cyan/10 px-5 py-4 text-right">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-cyan">
-                Top Match
-              </p>
-              <p className="mt-1 font-display text-2xl font-semibold text-foreground">
-                {topCandidate.candidate_name}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">{topCandidate.match_score}% fit</p>
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {topCandidate ? (
+              <div className="rounded-[1.4rem] border border-brand-cyan/25 bg-brand-cyan/10 px-5 py-4 text-right">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-cyan">
+                  Top Match
+                </p>
+                <p className="mt-1 font-display text-2xl font-semibold text-foreground">
+                  {topCandidate.candidate_name}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{topCandidate.match_score}% fit</p>
+              </div>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => response && downloadCsv(response)}
+              className="rounded-full border-brand-cyan/30 bg-gradient-to-r from-brand-cyan/10 to-brand-gold/10 px-4 py-2 text-brand-cyan shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-cyan/60 hover:bg-brand-cyan/15"
+            >
+              <Download className="h-4 w-4" />
+              Download CSV
+            </Button>
+          </div>
         </div>
       </div>
 

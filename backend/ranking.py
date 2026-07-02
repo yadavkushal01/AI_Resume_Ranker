@@ -25,7 +25,9 @@ from feature_engineering import (
 from semantic import (
     generate_embedding,
     generate_embeddings,
-    calculate_semantic_match
+    calculate_semantic_match,
+    calculate_semantic_scores_with_faiss,
+    get_cached_candidate_embeddings,
 )
 
 # ---------------- Matching ---------------- #
@@ -65,7 +67,8 @@ from credibility import (
 # ---------------- Scoring ---------------- #
 
 from scoring import (
-    calculate_scoring_pipeline
+    calculate_scoring_pipeline,
+    normalize_score_distribution,
 )
 
 # ---------------- Review ---------------- #
@@ -86,6 +89,7 @@ def score_candidate(
     max_ai_strength,
     max_retrieval_strength,
     candidate_embedding=None,
+    candidate_semantic_score=None,
 ):
     """
     Complete pipeline for scoring
@@ -173,21 +177,27 @@ def score_candidate(
     # Semantic Matching
     # ------------------------------------------------------
 
-    if candidate_embedding is None:
-        candidate_text = build_candidate_text(
-            candidate
+    if candidate_semantic_score is not None:
+        features["semantic_score"] = round(
+            candidate_semantic_score,
+            4
         )
+    else:
+        if candidate_embedding is None:
+            candidate_text = build_candidate_text(
+                candidate
+            )
 
-        candidate_embedding = generate_embedding(
-            candidate_text
-        )
+            candidate_embedding = generate_embedding(
+                candidate_text
+            )
 
-    features.update(
-        calculate_semantic_match(
-            candidate_embedding,
-            jd_embedding
+        features.update(
+            calculate_semantic_match(
+                candidate_embedding,
+                jd_embedding
+            )
         )
-    )
 
     # ------------------------------------------------------
     # Production Analysis
@@ -255,7 +265,7 @@ def score_candidate(
 # Rank Candidates
 # ==========================================================
 
-def rank_candidates(candidates, jd):
+def rank_candidates(candidates, jd, cache_path=None, rebuild_cache=False):
     """
     Rank all candidates for a given Job Description.
     """
@@ -270,12 +280,16 @@ def rank_candidates(candidates, jd):
         jd_text
     )
 
-    candidate_texts = [
-        build_candidate_text(candidate)
-        for candidate in candidates
-    ]
+    candidate_embeddings = get_cached_candidate_embeddings(
+        candidates,
+        cache_path=cache_path,
+        rebuild_cache=rebuild_cache,
+    )
 
-    candidate_embeddings = generate_embeddings(candidate_texts)
+    semantic_scores = calculate_semantic_scores_with_faiss(
+        candidate_embeddings,
+        jd_embedding
+    )
 
     results = []
 
@@ -333,6 +347,11 @@ def rank_candidates(candidates, jd):
         if len(candidate_embeddings) > index:
             candidate_embedding = candidate_embeddings[index]
 
+        candidate_semantic_score = None
+
+        if len(semantic_scores) > index:
+            candidate_semantic_score = semantic_scores[index]
+
         candidate_result = score_candidate(
 
             candidate,
@@ -345,7 +364,9 @@ def rank_candidates(candidates, jd):
 
             max_retrieval_strength,
 
-            candidate_embedding
+            candidate_embedding,
+
+            candidate_semantic_score
 
         )
 
@@ -379,6 +400,11 @@ def rank_candidates(candidates, jd):
 
     )
 
+    normalized_scores = normalize_score_distribution([candidate["score"] for candidate in results])
+
+    for candidate, normalized_score in zip(results, normalized_scores):
+        candidate["score"] = round(normalized_score, 4)
+
     # ------------------------------------------------------
     # Assign Ranks
     # ------------------------------------------------------
@@ -402,12 +428,15 @@ def rank_candidates(candidates, jd):
 def save_submission(
     results,
     filename="submission.csv",
-    top_k=100
+    top_k=None
 ):
     """
     Save the ranked candidates
     in the required submission format.
     """
+
+    if top_k is None:
+        top_k = len(results)
 
     submission = results[:top_k]
 
